@@ -16,161 +16,28 @@ uint8_t uartReceiveComplatedFlag;
 char ModbusRx[BUFFERSIZE];
 char tempModbusRx[BUFFERSIZE];
 char ModbusTx[BUFFERSIZE];
+
 uint16_t rxCRC;
-//uint16_t RegAddress;
-//uint16_t NumberOfReg;
+
 
 extern UART_HandleTypeDef huart2;
 
 
-void sendMessage(char *msg, uint8_t len)
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	HAL_UART_Transmit_IT(&huart2, (uint8_t *)msg, len);
 
-}
-
-
-static void makePacket_01(char *msg, uint8_t Lenght)
-{
-	uint16_t RegAddress, NumberCoils, NumberByte,CRCValue;
-	RegAddress = (msg[2] << 8) | (msg[3]);	//Okunacak bobinlerin başlangıç adresi.
-	NumberCoils = (msg[4] << 8) | (msg[5]); //Okunacak bobin adedi.
-	NumberByte = (NumberCoils / 9) + 1;
-
-	uint8_t tempCoil[NumberByte];
-	uint8_t CoilCount, i = 0, ByteCount = 0;
-
-	ModbusTx[0] = msg[0];
-	ModbusTx[1] = msg[1];
-	ModbusTx[2] = NumberByte;
-
-
-	for(CoilCount = 0; CoilCount < NumberCoils; CoilCount++)
+	RxCpltCallbackFlag = SET;
+	ModbusRx[DataCounter++] = uartRxData;
+	if(DataCounter >= BUFFERSIZE)
 	{
-			if( CoilCount % 8 == 0 && CoilCount != 0)
-			{
-				ByteCount++;
-				i = 0;
-			}
-			tempCoil[ByteCount] |= (ModbusCoil[RegAddress + CoilCount] << i);
-			i++;
+		DataCounter  = 0;
 	}
 
-	for(i = 0; i < ByteCount + 1; i++)
-	{
-		ModbusTx[3 + i] = tempCoil[i];
-	}
-
-	CRCValue = MODBUS_CRC16(ModbusTx, 3 + i);
-	ModbusTx[3 + i] = (CRCValue & 0x00FF);
-	ModbusTx[4 + i] = (CRCValue >> 8);
-	sendMessage(ModbusTx, 5 + i);
-	memset(tempCoil, 0, 8 * ByteCount);
-}
-
-static void makePacket_03(char *msg, uint8_t Lenght)
-{
-	uint8_t i, m = 0;
-
-	uint16_t RegAddress = 0;
-	uint16_t NumberOfReg = 0;
-	uint16_t CRCValue;
-
-	RegAddress = (msg[2] << 8) | (msg[3]);
-	NumberOfReg = (msg[4] << 8) | (msg[5]);
-	ModbusTx[0] = msg[0];
-	ModbusTx[1] = msg[1];
-	ModbusTx[2] = (NumberOfReg * 2);
-
-	for(i = 0; i < NumberOfReg * 2; i += 2)
-	{
-		ModbusTx[3 + i] = (uint8_t)(ModbusRegister[RegAddress + m] >> 8);
-		ModbusTx[4 + i] = (uint8_t)(ModbusRegister[RegAddress + m] & 0x00FF);
-		m++;
-	}
-
-	//CRC Calculate
-	CRCValue = MODBUS_CRC16(ModbusTx, 3 + (NumberOfReg * 2 ));
-	ModbusTx[4 + (NumberOfReg * 2 )] = (CRCValue >> 8);
-	ModbusTx[3 + (NumberOfReg * 2 )] = (CRCValue & 0x00FF);
-	/********************************************************/
-	sendMessage(ModbusTx, 5 + (NumberOfReg * 2 ));
-}
-
-
-static void makePacket_05(char *msg, uint8_t Lenght)
-{
-	uint16_t RegAddress, RegValue;
-	RegAddress = (msg[2] << 8) | (msg[3]);
-	RegValue = (msg[4] << 8) | (msg[5]);
-
-	ModbusCoil[RegAddress] = (bool)RegValue;
-
-	sendMessage(msg, Lenght);
-}
-
-static void makePacket_06(char *msg, uint8_t Lenght)
-{
-	uint16_t RegAddress, RegValue;
-	RegAddress = (msg[2] << 8) | (msg[3]);
-	RegValue = (msg[4] << 8) | (msg[5]);
-
-	ModbusRegister[RegAddress] = RegValue;
-	sendMessage(msg, Lenght);
+	HAL_UART_Receive_IT(&huart2 , &uartRxData , 1);
+	uartTimeoutcounter = 0;
 
 }
 
-static void makePacket_15(char *msg, uint8_t Lenght)
-{
-	uint16_t RegAddress, NumberOfByte, NumberOfCoils, CRCValue;
-	uint8_t i,m,k;
-	RegAddress = (msg[2] << 8) | (msg[3]);
-	NumberOfCoils = (msg[4] << 8) | (msg[5]);
-	NumberOfByte = msg[6];
-
-	for(i = 0; i < NumberOfCoils; i++)
-	{
-		ModbusCoil[i] = (msg[7 + m] & (0x01 << k)) ;
-
-		k++;
-		if(k % 8 == 0 && k != 0)
-		{
-			m++;
-			k = 0;
-		}
-	}
-
-	memcpy(ModbusTx, msg, 6);
-
-	CRCValue = MODBUS_CRC16(ModbusTx, 6);
-	ModbusTx[6] = (CRCValue & 0x00FF);
-	ModbusTx[7] = (CRCValue >> 8);
-	sendMessage(ModbusTx, 8);
-}
-
-
-
-static void makePacket_16(char *msg, uint8_t Lenght)
-{
-	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-	uint16_t RegAddress, NumberOfReg, CRCValue;
-	uint8_t i,m = 0;
-	RegAddress = (msg[2] << 8) | (msg[3]);
-	NumberOfReg = (msg[4] << 8) | (msg[5]);
-
-	for(i = 0; i < NumberOfReg; i++)
-	{
-		ModbusRegister[RegAddress + i] = (uint16_t)((uint16_t)msg[7 + m] << 8) | (msg[8 + m]);
-		m += 2;
-	}
-
-    memcpy(ModbusTx, msg, 6);
-
-	CRCValue = MODBUS_CRC16(ModbusTx, 6);
-	ModbusTx[6] = (CRCValue & 0x00FF);
-	ModbusTx[7] = (CRCValue >> 8);
-	sendMessage(ModbusTx, 8);
-}
 
 
 void transmitDataMake(char *msg, uint8_t Lenght)
@@ -209,7 +76,7 @@ void uartDataHandler(void)
 	uint8_t tempCounter;
 	uint16_t CRCValue;
 
-	if(uartReceiveComplatedFlag == SET)     //alma islemi tammalandi
+	if(uartReceiveComplatedFlag == SET)     //Data receiving is finished
 	{
 		uartReceiveComplatedFlag = RESET;
 	    memcpy(tempModbusRx, ModbusRx, DataCounter + 1);
@@ -218,11 +85,12 @@ void uartDataHandler(void)
 		memset(ModbusRx, 0, BUFFERSIZE);
 		memset(ModbusTx, 0, BUFFERSIZE);
 
-		//CRC dogruysa slave gereken datayı gönderir.
-		CRCValue = MODBUS_CRC16(tempModbusRx, tempCounter - 2); //CRC Hesaplama
-		rxCRC = (tempModbusRx[tempCounter -1] << 8) | (tempModbusRx[tempCounter - 2]); //Alınan CRC değeri rxCRC değine atanır.
+		/*CRC Check*/
+		CRCValue = MODBUS_CRC16(tempModbusRx, tempCounter - 2);
+		rxCRC = (tempModbusRx[tempCounter -1] << 8) | (tempModbusRx[tempCounter - 2]);
 
-		if(rxCRC == CRCValue && tempModbusRx[0] == SLAVEID) 	//İki değer eşitse data oluşturulur ve geri gönderilir.
+		/*If the calculated CRC value and the received CRC value are equal and the Slave ID is correct, respond to the receiving data.  */
+		if(rxCRC == CRCValue && tempModbusRx[0] == SLAVEID)
 		{
 			transmitDataMake(&tempModbusRx[0], tempCounter);
 		}
@@ -230,35 +98,176 @@ void uartDataHandler(void)
 	}
 }
 
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-
-	RxCpltCallbackFlag = SET; // data geldi bayragi
-	ModbusRx[DataCounter++] = uartRxData; //gelen datayÄ± sÄ±ra ile buffera alÄ±yor
-	if(DataCounter >= BUFFERSIZE)
-	{
-		DataCounter  = 0;
-	}
-
-	HAL_UART_Receive_IT(&huart2 , &uartRxData , 1); // yeni data iÃ§in kesmeyi tekrar kur
-	uartTimeoutcounter = 0; // her data geldiÄŸinde timeouttu sÄ±fÄ±rla
-
-}
-
-// This function called in the systick timer
-void uartInsideTimer(void)
+// This function should be called in systick timer
+void uartTimer(void)
 {
 	if(RxCpltCallbackFlag == SET)
 	{
-		if(uartTimeoutcounter++ > 100) //uarttÄ±meout kÄ±satÄ±lacak test edilip
+		if(uartTimeoutcounter++ > 100)
 		{
 
-			RxCpltCallbackFlag = RESET; //flagleri temizle
+			RxCpltCallbackFlag = RESET;
 			uartTimeoutcounter = 0;
-			uartReceiveComplatedFlag = SET; // data alÄ±mÄ± bitti
+			uartReceiveComplatedFlag = SET;
 		}
 	}
+}
+
+void sendMessage(char *msg, uint8_t len)
+{
+	HAL_UART_Transmit_IT(&huart2, (uint8_t *)msg, len);
+}
+
+
+/*****Modbus Function*****/
+//The funciton are used to respond to receiving modbus data.
+
+void makePacket_01(char *msg, uint8_t Lenght)
+{
+	uint16_t RegAddress, NumberCoils, NumberByte, CRCValue;
+	RegAddress = (msg[2] << 8) | (msg[3]);	//Starting address of the coils to be read
+	NumberCoils = (msg[4] << 8) | (msg[5]); //Number of coils to be read
+	NumberByte = (NumberCoils / 9) + 1;		//Data byte to be transmit
+
+	uint8_t tempCoil[NumberByte];
+	uint8_t CoilCount, i = 0, ByteCount = 0;
+
+	ModbusTx[0] = msg[0];
+	ModbusTx[1] = msg[1];
+	ModbusTx[2] = NumberByte;
+
+
+	for(CoilCount = 0; CoilCount < NumberCoils; CoilCount++)
+	{
+			if( CoilCount % 8 == 0 && CoilCount != 0)
+			{
+				ByteCount++;
+				i = 0;
+			}
+			tempCoil[ByteCount] |= (ModbusCoil[RegAddress + CoilCount] << i);
+			i++;
+	}
+
+	for(i = 0; i < ByteCount + 1; i++)
+	{
+		ModbusTx[3 + i] = tempCoil[i];
+	}
+
+	/*Calculating the CRC value of the data to be sent*/
+	CRCValue = MODBUS_CRC16(ModbusTx, 3 + i);
+	ModbusTx[3 + i] = (CRCValue & 0x00FF);
+	ModbusTx[4 + i] = (CRCValue >> 8);
+	/**************************************************/
+
+	sendMessage(ModbusTx, 5 + i); //Send response data
+	memset(tempCoil, 0, 8 * ByteCount); //Clear tempCoil array
+}
+
+void makePacket_03(char *msg, uint8_t Lenght)
+{
+	uint8_t i, m = 0;
+
+	uint16_t RegAddress = 0;
+	uint16_t NumberOfReg = 0;
+	uint16_t CRCValue;
+
+	RegAddress = (msg[2] << 8) | (msg[3]);
+	NumberOfReg = (msg[4] << 8) | (msg[5]);
+	ModbusTx[0] = msg[0];
+	ModbusTx[1] = msg[1];
+	ModbusTx[2] = (NumberOfReg * 2);
+
+	for(i = 0; i < NumberOfReg * 2; i += 2)
+	{
+		ModbusTx[3 + i] = (uint8_t)(ModbusRegister[RegAddress + m] >> 8);
+		ModbusTx[4 + i] = (uint8_t)(ModbusRegister[RegAddress + m] & 0x00FF);
+		m++;
+	}
+
+	//CRC Calculate
+	CRCValue = MODBUS_CRC16(ModbusTx, 3 + (NumberOfReg * 2 ));
+	ModbusTx[4 + (NumberOfReg * 2 )] = (CRCValue >> 8);
+	ModbusTx[3 + (NumberOfReg * 2 )] = (CRCValue & 0x00FF);
+	/********************************************************/
+	sendMessage(ModbusTx, 5 + (NumberOfReg * 2 ));
+}
+
+
+void makePacket_05(char *msg, uint8_t Lenght)
+{
+	uint16_t RegAddress, RegValue;
+	RegAddress = (msg[2] << 8) | (msg[3]);
+	RegValue = (msg[4] << 8) | (msg[5]);
+
+	ModbusCoil[RegAddress] = (bool)RegValue;
+
+	sendMessage(msg, Lenght);
+}
+
+void makePacket_06(char *msg, uint8_t Lenght)
+{
+	uint16_t RegAddress, RegValue;
+	RegAddress = (msg[2] << 8) | (msg[3]);
+	RegValue = (msg[4] << 8) | (msg[5]);
+
+	ModbusRegister[RegAddress] = RegValue;
+	sendMessage(msg, Lenght);
+
+}
+
+void makePacket_15(char *msg, uint8_t Lenght)
+{
+	uint16_t NumberOfCoils, CRCValue;
+	uint8_t i,m,k;
+	//uint16_t NumberOfByte, RegAddress; -> not used
+	//RegAddress = (msg[2] << 8) | (msg[3]);
+
+	NumberOfCoils = (msg[4] << 8) | (msg[5]);
+
+	//NumberOfByte = msg[6];
+
+	for(i = 0; i < NumberOfCoils; i++)
+	{
+		ModbusCoil[i] = (msg[7 + m] & (0x01 << k)) ;
+
+		k++;
+		if(k % 8 == 0 && k != 0)
+		{
+			m++;
+			k = 0;
+		}
+	}
+
+	memcpy(ModbusTx, msg, 6);
+
+	CRCValue = MODBUS_CRC16(ModbusTx, 6);
+	ModbusTx[6] = (CRCValue & 0x00FF);
+	ModbusTx[7] = (CRCValue >> 8);
+	sendMessage(ModbusTx, 8);
+}
+
+
+
+void makePacket_16(char *msg, uint8_t Lenght)
+{
+	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+	uint16_t RegAddress, NumberOfReg, CRCValue;
+	uint8_t i,m = 0;
+	RegAddress = (msg[2] << 8) | (msg[3]);
+	NumberOfReg = (msg[4] << 8) | (msg[5]);
+
+	for(i = 0; i < NumberOfReg; i++)
+	{
+		ModbusRegister[RegAddress + i] = (uint16_t)((uint16_t)msg[7 + m] << 8) | (msg[8 + m]);
+		m += 2;
+	}
+
+    memcpy(ModbusTx, msg, 6);
+
+	CRCValue = MODBUS_CRC16(ModbusTx, 6);
+	ModbusTx[6] = (CRCValue & 0x00FF);
+	ModbusTx[7] = (CRCValue >> 8);
+	sendMessage(ModbusTx, 8);
 }
 
 
