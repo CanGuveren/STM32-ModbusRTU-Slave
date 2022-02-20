@@ -108,7 +108,7 @@ int main(void)
   ModbusCoil[8] = 1;
   ModbusCoil[9] = 1;
   ModbusCoil[10] = 1;
-  ModbusCoil[11] = 1;
+  ModbusCoil[11] = 0;
    /* USER CODE END 2 */
 
   /* Infinite loop */

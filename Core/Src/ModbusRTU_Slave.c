@@ -2,7 +2,7 @@
  * Modbus_Lib.c
  *
  *  Created on: Feb 10, 2022
- *      Author: DELL
+ *      Author: Ümit Can Güveren
  */
 #include <ModbusRTU_Slave.h>
 #include "main.h"

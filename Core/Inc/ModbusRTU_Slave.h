@@ -2,7 +2,7 @@
  * Modbus_Lib.h
  *
  *  Created on: Feb 10, 2022
- *      Author: DELL
+ *      Author: Ümit Can Güveren
  */
 
 #ifndef INC_MODBUSRTU_SLAVE_H_
