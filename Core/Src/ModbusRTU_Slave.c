@@ -9,9 +9,9 @@
 
 uint8_t uartRxData;
 uint8_t DataCounter;
-uint8_t RxCpltCallbackFlag;
-uint8_t uartTimeoutcounter;
-uint8_t uartReceiveComplatedFlag;
+uint8_t RxInterruptFlag;
+uint8_t uartTimeCounter;
+uint8_t uartPacketComplatedFlag;
 
 char ModbusRx[BUFFERSIZE];
 char tempModbusRx[BUFFERSIZE];
@@ -22,11 +22,11 @@ uint16_t rxCRC;
 
 extern UART_HandleTypeDef huart2;
 
-
+/*Receive data interrupt*/
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 
-	RxCpltCallbackFlag = SET;
+	RxInterruptFlag = SET;
 	ModbusRx[DataCounter++] = uartRxData;
 	if(DataCounter >= BUFFERSIZE)
 	{
@@ -34,12 +34,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 
 	HAL_UART_Receive_IT(&huart2 , &uartRxData , 1);
-	uartTimeoutcounter = 0;
-
+	uartTimeCounter = 0;
 }
 
 
-
+/*calls the corresponding function according to the received function command*/
 void transmitDataMake(char *msg, uint8_t Lenght)
 {
 	switch(msg[1])
@@ -71,14 +70,15 @@ void transmitDataMake(char *msg, uint8_t Lenght)
 
 }
 
+/*Runs when data retrieval is complete and check CRC*/
 void uartDataHandler(void)
 {
 	uint8_t tempCounter;
 	uint16_t CRCValue;
 
-	if(uartReceiveComplatedFlag == SET)     //Data receiving is finished
+	if(uartPacketComplatedFlag == SET)     //Data receiving is finished
 	{
-		uartReceiveComplatedFlag = RESET;
+		uartPacketComplatedFlag = RESET;
 	    memcpy(tempModbusRx, ModbusRx, DataCounter + 1);
 	    tempCounter = DataCounter;
 		DataCounter = 0;
@@ -98,17 +98,17 @@ void uartDataHandler(void)
 	}
 }
 
-// This function should be called in systick timer
+/* This function should be called in systick timer */
 void uartTimer(void)
 {
-	if(RxCpltCallbackFlag == SET)
+	if(RxInterruptFlag == SET)
 	{
-		if(uartTimeoutcounter++ > 100)
+		if(uartTimeCounter++ > 100)
 		{
 
-			RxCpltCallbackFlag = RESET;
-			uartTimeoutcounter = 0;
-			uartReceiveComplatedFlag = SET;
+			RxInterruptFlag = RESET;
+			uartTimeCounter = 0;
+			uartPacketComplatedFlag = SET;
 		}
 	}
 }
@@ -120,14 +120,15 @@ void sendMessage(char *msg, uint8_t len)
 
 
 /*****Modbus Function*****/
-//The funciton are used to respond to receiving modbus data.
+//The function are used to respond to receiving modbus data.
 
+/*Send coil data*/
 void makePacket_01(char *msg, uint8_t Lenght)
 {
 	uint16_t RegAddress, NumberCoils, NumberByte, CRCValue;
 	RegAddress = (msg[2] << 8) | (msg[3]);	//Starting address of the coils to be read
 	NumberCoils = (msg[4] << 8) | (msg[5]); //Number of coils to be read
-	NumberByte = (NumberCoils / 9) + 1;		//Data byte to be transmit
+	NumberByte = findByte(NumberCoils);		//Data byte to be transmit
 
 	uint8_t tempCoil[NumberByte];
 	uint8_t CoilCount, i = 0, ByteCount = 0;
@@ -163,6 +164,7 @@ void makePacket_01(char *msg, uint8_t Lenght)
 	memset(tempCoil, 0, 8 * ByteCount); //Clear tempCoil array
 }
 
+/*Send register data*/
 void makePacket_03(char *msg, uint8_t Lenght)
 {
 	uint8_t i, m = 0;
@@ -192,7 +194,7 @@ void makePacket_03(char *msg, uint8_t Lenght)
 	sendMessage(ModbusTx, 5 + (NumberOfReg * 2 ));
 }
 
-
+/*Write single coil*/
 void makePacket_05(char *msg, uint8_t Lenght)
 {
 	uint16_t RegAddress, RegValue;
@@ -204,6 +206,7 @@ void makePacket_05(char *msg, uint8_t Lenght)
 	sendMessage(msg, Lenght);
 }
 
+/*Write single register*/
 void makePacket_06(char *msg, uint8_t Lenght)
 {
 	uint16_t RegAddress, RegValue;
@@ -215,6 +218,7 @@ void makePacket_06(char *msg, uint8_t Lenght)
 
 }
 
+/*Write multiple coils*/
 void makePacket_15(char *msg, uint8_t Lenght)
 {
 	uint16_t NumberOfCoils, CRCValue;
@@ -247,7 +251,7 @@ void makePacket_15(char *msg, uint8_t Lenght)
 }
 
 
-
+/*Write multiple registers*/
 void makePacket_16(char *msg, uint8_t Lenght)
 {
 	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
@@ -270,6 +274,22 @@ void makePacket_16(char *msg, uint8_t Lenght)
 	sendMessage(ModbusTx, 8);
 }
 
+uint8_t findByte(int16_t NumberOfCoil)
+{
+	volatile uint8_t NumberOfByte = 0;
+
+	while(NumberOfCoil >= 0)
+	{
+		NumberOfCoil -= 8;
+
+		NumberOfByte++;
+		if(NumberOfCoil < 0)
+		{
+			break;
+		}
+	}
+	return NumberOfByte;
+}
 
 uint16_t MODBUS_CRC16(char *buf, uint8_t len )
 {

@@ -16,9 +16,9 @@
 
 
 #define SLAVEID    1
-#define BUFFERSIZE 30
 #define NUMBER_OF_REGISTER 10
-#define NUMBER_OF_COIL 16
+#define NUMBER_OF_COIL 30
+#define BUFFERSIZE (NUMBER_OF_REGISTER * 2 + 5)
 
 uint16_t ModbusRegister[NUMBER_OF_REGISTER];
 bool ModbusCoil[NUMBER_OF_COIL];
@@ -36,15 +36,18 @@ enum
 
 extern uint8_t uartRxData;
 extern uint8_t DataCounter;
-extern uint8_t RxCpltCallbackFlag;
-extern uint8_t uartTimeoutcounter;
-extern uint8_t uartReceiveComplatedFlag;
-extern char ModbusRx[30];
+extern uint8_t RxInterruptFlag;
+extern uint8_t uartTimeCounter;
+extern uint8_t uartPacketComplatedFlag;
+extern char ModbusRx[BUFFERSIZE];
 
+/* Receiver functions */
 void uartDataHandler(void);
 void uartTimer(void);
 void transmitDataMake(char *msg, uint8_t Lenght);
 
+
+/* Modbus Functions */
 void makePacket_01(char *msg, uint8_t Lenght);
 void makePacket_03(char *msg, uint8_t Lenght);
 void makePacket_05(char *msg, uint8_t Lenght);
@@ -52,8 +55,9 @@ void makePacket_06(char *msg, uint8_t Lenght);
 void makePacket_15(char *msg, uint8_t Lenght);
 void makePacket_16(char *msg, uint8_t Lenght);
 
-void sendMessage(char *msg, uint8_t len);
 
+void sendMessage(char *msg, uint8_t len);
+uint8_t findByte(int16_t NumberOfCoil);
 uint16_t MODBUS_CRC16(char *buf, uint8_t len );
 
 
